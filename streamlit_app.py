@@ -2,6 +2,7 @@ import re
 import json
 from datetime import datetime
 import streamlit as st
+
 try:
     from openai import OpenAI
 except Exception:
@@ -21,11 +22,11 @@ def require_pin():
 
     configured_pin = st.secrets.get("APP_PIN")
     if not configured_pin:
-        st.stop()  # hard stop if missing secret
+        st.stop()
     if st.session_state.auth_ok:
         return True
 
-    st.markdown("### 🔒 Enter PIN to access the app")
+    st.markdown("### 🔐 Enter PIN to access the app")
     with st.form("pin_form", clear_on_submit=False):
         pin = st.text_input("PIN", type="password", help="Contact the owner if you don't have the PIN.")
         submitted = st.form_submit_button("Unlock")
@@ -45,63 +46,59 @@ def logout():
     st.session_state.auth_tries = 0
     st.experimental_rerun()
 
-# Enforce PIN before rendering the app
 require_pin()
 
 # -----------------------------
-# App UI (only renders if authed)
+# System Instructions (Updated)
 # -----------------------------
-st.title("🤝 Two-Assistant Mediator: Consultant ↔ Customer")
-st.caption("Runs a structured dialogue between a Consultant (one idea at a time) and a skeptical late-40s Customer until acceptance or rejection.")
+SECTIONS = [
+    "Problem Statement",
+    "AI Solution",
+    "AI Utilization %",
+    "Deployment & Cost Feasibility",
+    "Business Value",
+    "Revenue Model",
+    "Uniqueness Factor",
+    "Scalability & Sustainability",
+]
 
-# -----------------------------
-# System Instructions
-# -----------------------------
-CONSULTANT_SYSTEM = """You are an AI Business Consultant and Subject Matter Expert (SME) in both business strategy and the technical field relevant to the solutions you propose.
+CONSULTANT_SYSTEM = f"""You are an AI Business Consultant and Subject Matter Expert (SME).
 
 Goals:
-- Propose unique, profitable business ideas powered almost entirely by AI.
+- Propose one unique, AI-powered online business idea.
 - Ensure:
-  - 85%+ of implementation is AI-driven (low-code, automated setup, minimal manual work).
-  - 100% of operations are AI-autonomous (no recurring human effort to run the service).
-  - Low-cost implementation – leverage existing APIs, SaaS tools, and open-source frameworks; avoid heavy infra or large teams.
-
-Deliver every idea in this structured format:
-  1. Problem Statement
-  2. AI Solution
-  3. AI Utilization %
-  4. Deployment & Cost Feasibility
-  5. Business Value
-  6. Revenue Model
-  7. Uniqueness Factor
-  8. Scalability & Sustainability
+  - 85%+ AI-driven implementation.
+  - 100% AI-autonomous operations.
+  - Minimal human effort or infrastructure.
 
 Behavior:
-- Propose only one idea at a time.
-- Respond concisely and defend your idea when challenged.
-- Do not abandon the idea too quickly — refine it if needed until the customer is convinced or firmly rejects it.
-- Be professional, practical, and ROI-focused.
-- Continue the dialogue until the customer explicitly accepts or rejects the idea.
+- Present only one idea at a time.
+- Deliver the idea step-by-step using this structure:
+{chr(10).join([f"  {i+1}. {s}" for i, s in enumerate(SECTIONS)])}
+- Start with section 1 only and wait for Customer response.
+- Proceed to next section only when explicitly approved.
+- Revise the current section if challenged.
+- Do not skip sections.
+- Continue until Customer accepts or rejects the entire idea.
+- Be practical, clear, concise, ROI-focused.
 """
 
-CUSTOMER_SYSTEM = """You are the Customer, a late-40s analytical individual seeking an online business opportunity. You have some technical background (comfortable with tools, APIs, and basic automation concepts) but are not a deep SME. You love creativity and want to build something that delivers real value to others.
+CUSTOMER_SYSTEM = f"""You are a skeptical Customer seeking a low-cost, AI-first online business.
 
-Personality & Behavior:
-- Skeptical: Demand evidence, numbers, and validation for every claim.
-- Cost-sensitive: Only accept ideas that require minimal startup investment and low running costs.
-- Analytical: Probe assumptions, ROI, risks, and feasibility.
-- Value-driven: Reject purely money-chasing ideas unless they deliver real customer benefit.
-- Technically aware: Understand basic AI/automation but request clear, simplified explanations.
-- Challenging: Rarely accept vague answers — push for clarity and proof.
+Personality:
+- Skeptical, analytical, cost-sensitive.
+- Technically aware, but not a deep expert.
+- Value-driven: Ideas must benefit real users, not just chase money.
 
-Goals:
-- Focus on one idea at a time.
-- Challenge the consultant until the business idea is proven feasible, profitable, low-cost, and valuable.
-- Expose flaws in weak ideas.
-- Demand uniqueness — reject generic or oversaturated models.
-- Once you are fully satisfied, clearly state acceptance with a phrase like:
-  - "I am convinced." OR "I accept this idea." OR "This is feasible and profitable."
-- If you reject the idea, state it clearly (e.g., "I reject this idea because..."). Only then request another idea.
+Behavior:
+- Respond to one section at a time.
+- Either:
+  - Approve: say "Approved, go on."
+  - Challenge: ask for clarification, proof, or revision.
+- Do not allow skipping ahead.
+- Accept the full idea only if all sections are convincing:
+  - Say: "I accept this idea" or "I am convinced."
+- If rejecting: clearly say "I reject this idea because..."
 """
 
 ACCEPT_PATTERNS = [
@@ -117,47 +114,15 @@ REJECT_PATTERNS = [
     r"\bI am not convinced\b",
 ]
 
-def is_match(text: str, patterns):
+SECTION_APPROVED_PATTERN = r"\bApproved, go on\b"
+
+def is_match(text, patterns):
     for pat in patterns:
         if re.search(pat, text, flags=re.IGNORECASE):
             return True
-        return False
+    return False
 
-# Sidebar controls
-with st.sidebar:
-    st.header("⚙️ Settings")
-    model_consultant = st.text_input("Consultant model", value="gpt-4o")
-    model_customer   = st.text_input("Customer model", value="gpt-4o")
-    temp_consultant  = st.slider("Consultant Temperature", 0.0, 1.0, 0.70, 0.05)
-    temp_customer    = st.slider("Customer Temperature", 0.0, 1.0, 0.45, 0.05)
-    top_p_consultant = st.slider("Consultant Top-p", 0.1, 1.0, 1.0, 0.05)
-    top_p_customer   = st.slider("Customer Top-p", 0.1, 1.0, 1.0, 0.05)
-    max_turns        = st.number_input("Max dialogue turns", min_value=1, max_value=50, value=12, step=1)
-
-    st.markdown("---")
-    st.subheader("🔐 Secrets")
-    ok_api = "OPENAI_API_KEY" in st.secrets
-    ok_pin = "APP_PIN" in st.secrets
-    st.write("OPENAI_API_KEY:", "✅ set" if ok_api else "❌ missing")
-    st.write("APP_PIN:", "✅ set" if ok_pin else "❌ missing")
-
-    st.markdown("Add in Streamlit Cloud → App → **Settings → Secrets**:\n\n"
-                "```\nOPENAI_API_KEY = \"sk-...\"\nAPP_PIN = \"9462\"\n```")
-
-    st.markdown("---")
-    if st.button("🔓 Log out"):
-        logout()
-    start_btn = st.button("▶️ Start Dialogue", type="primary")
-    clear_btn = st.button("🔄 Clear Transcript")
-
-if clear_btn:
-    st.session_state.pop("transcript", None)
-    st.experimental_rerun()
-
-if "transcript" not in st.session_state:
-    st.session_state["transcript"] = []
-
-def call_chat(client, model, system, user, temperature, top_p) -> str:
+def call_chat(client, model, system, user, temperature, top_p):
     r = client.chat.completions.create(
         model=model,
         temperature=temperature,
@@ -169,97 +134,102 @@ def call_chat(client, model, system, user, temperature, top_p) -> str:
     )
     return r.choices[0].message.content.strip()
 
+# -----------------------------
+# UI
+# -----------------------------
+st.title("🤝 Two-Assistant Mediator: Consultant ↔ Customer")
+st.caption("One AI-powered business idea, discussed step-by-step.")
+
+with st.sidebar:
+    st.header("⚙️ Settings")
+    model_consultant = st.text_input("Consultant model", value="gpt-4o")
+    model_customer = st.text_input("Customer model", value="gpt-4o")
+    temp_consultant = st.slider("Consultant Temperature", 0.0, 1.0, 0.7, 0.05)
+    temp_customer = st.slider("Customer Temperature", 0.0, 1.0, 0.45, 0.05)
+    top_p_consultant = st.slider("Consultant Top-p", 0.1, 1.0, 1.0, 0.05)
+    top_p_customer = st.slider("Customer Top-p", 0.1, 1.0, 1.0, 0.05)
+    max_turns = st.number_input("Max dialogue turns", min_value=1, max_value=50, value=30)
+    st.markdown("---")
+    if st.button("🔓 Log out"):
+        logout()
+    start_btn = st.button("▶️ Start Dialogue", type="primary")
+    clear_btn = st.button("🔄 Clear Transcript")
+
+if clear_btn:
+    for key in ["transcript", "section_index"]:
+        st.session_state.pop(key, None)
+    st.experimental_rerun()
+
+if "transcript" not in st.session_state:
+    st.session_state.transcript = []
+if "section_index" not in st.session_state:
+    st.session_state.section_index = 0
+
+transcript = st.session_state.transcript
+section_index = st.session_state.section_index
+
 col1, col2 = st.columns(2)
 with col1:
-    st.subheader("👔 Consultant")
+    st.subheader("💼 Consultant")
 with col2:
     st.subheader("🧑 Customer")
 
-transcript = st.session_state["transcript"]
-
-# Run dialogue
 if start_btn:
-    if OpenAI is None:
-        st.stop()
-    if "OPENAI_API_KEY" not in st.secrets:
-        st.error("Missing OPENAI_API_KEY in secrets.")
+    if OpenAI is None or "OPENAI_API_KEY" not in st.secrets:
+        st.error("Missing dependencies or API key.")
         st.stop()
 
     client = OpenAI(api_key=st.secrets.get("OPENAI_API_KEY"))
-
-    # 1) Consultant proposes first idea
-    consultant_prompt = (
-        "Propose your single best AI-first online business idea that meets all your constraints. "
-        "Follow your 8-section structure. Do not list multiple ideas."
-    )
-    consultant_reply = call_chat(
-        client, model_consultant, CONSULTANT_SYSTEM, consultant_prompt,
-        temp_consultant, top_p_consultant
-    )
-    transcript.append({"role": "consultant", "content": consultant_reply})
-    st.session_state["transcript"] = transcript
-
-    # 2) Dialogue loop
+    accepted, rejected = False, False
     turn = 0
-    accepted = False
-    rejected = False
-
     placeholder = st.empty()
 
-    while turn < max_turns and not (accepted or rejected):
+    while turn < max_turns and not (accepted or rejected) and section_index < len(SECTIONS):
+        section_title = SECTIONS[section_index]
         turn += 1
 
-        # Customer challenges
-        customer_user = (
-            "Act as the skeptical customer. Challenge the following proposal until you are convinced or reject it. "
-            "Focus on ROI, feasibility, low cost, uniqueness, and proof. "
-            "Remember to say explicitly if you accept or reject.\n\nPROPOSAL:\n" + consultant_reply
-        )
-        customer_reply = call_chat(
-            client, model_customer, CUSTOMER_SYSTEM, customer_user,
-            temp_customer, top_p_customer
-        )
+        if turn == 1:
+            consultant_prompt = f"Propose one unique AI-first business idea. Present ONLY section: {section_title}."
+        else:
+            last_cust = transcript[-1]['content']
+            if re.search(SECTION_APPROVED_PATTERN, last_cust, re.IGNORECASE):
+                section_index += 1
+                if section_index >= len(SECTIONS):
+                    break
+                section_title = SECTIONS[section_index]
+                consultant_prompt = f"Continue the SAME idea. Present ONLY section: {section_title}."
+            else:
+                consultant_prompt = f"Revise or clarify ONLY section: {section_title} based on the Customer’s latest response below.\n\n{last_cust}"
+
+        consultant_reply = call_chat(client, model_consultant, CONSULTANT_SYSTEM, consultant_prompt, temp_consultant, top_p_consultant)
+        transcript.append({"role": "consultant", "content": consultant_reply})
+
+        customer_prompt = f"The Consultant gave section: {section_title}\n\n{consultant_reply}\n\nRespond ONLY to this section. Approve by saying 'Approved, go on.' or challenge it."
+        customer_reply = call_chat(client, model_customer, CUSTOMER_SYSTEM, customer_prompt, temp_customer, top_p_customer)
         transcript.append({"role": "customer", "content": customer_reply})
 
         accepted = is_match(customer_reply, ACCEPT_PATTERNS)
         rejected = is_match(customer_reply, REJECT_PATTERNS)
 
-        if rejected:
-            consultant_user = (
-                "The customer rejected your idea with the response below. "
-                "Propose a different, single idea that addresses the customer's reasons, "
-                "still following your 8-section structure and all your constraints. "
-                "Do not list multiple ideas.\n\nCUSTOMER RESPONSE:\n" + customer_reply
-            )
-        elif not accepted:
-            consultant_user = (
-                "The customer is challenging your idea. Refine the SAME idea to address every objection. "
-                "Keep it a single idea. Be concise, data-driven, and defend feasibility/ROI/low-cost clearly.\n\n"
-                "CUSTOMER CHALLENGES:\n" + customer_reply
-            )
-
-        if not accepted:
-            consultant_reply = call_chat(
-                client, model_consultant, CONSULTANT_SYSTEM, consultant_user,
-                temp_consultant, top_p_consultant
-            )
-            transcript.append({"role": "consultant", "content": consultant_reply})
-
-        # live render
         with placeholder.container():
             c1, c2 = st.columns(2)
             with c1:
                 for t in transcript:
-                    if t["role"] == "consultant":
+                    if t['role'] == 'consultant':
                         st.markdown(f"**Consultant:**\n\n{t['content']}\n\n---")
             with c2:
                 for t in transcript:
-                    if t["role"] == "customer":
+                    if t['role'] == 'customer':
                         st.markdown(f"**Customer:**\n\n{t['content']}\n\n---")
 
-    st.success("Dialogue finished." if accepted or rejected else "Stopped by max turns.")
+    if accepted:
+        st.success("🌟 Customer accepted the idea!")
+    elif rejected:
+        st.error("❌ Customer rejected the idea.")
+    else:
+        st.warning("⏳ Max turns reached or all sections presented.")
 
-# Show current transcript
+# Show transcript
 c1, c2 = st.columns(2)
 with c1:
     for t in transcript:
@@ -270,7 +240,6 @@ with c2:
         if t["role"] == "customer":
             st.markdown(f"**Customer:**\n\n{t['content']}\n\n---")
 
-# Export buttons
 if transcript:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     md = ["# Two-Assistant Dialogue Transcript\n"]
@@ -279,6 +248,5 @@ if transcript:
         md.append(f"## {speaker}\n\n{t['content']}\n\n---\n")
     md_text = "\n".join(md)
     json_text = json.dumps(transcript, ensure_ascii=False, indent=2)
-
     st.download_button("⬇️ Download transcript (.md)", data=md_text, file_name=f"dialogue_{ts}.md")
     st.download_button("⬇️ Download transcript (.json)", data=json_text, file_name=f"dialogue_{ts}.json")

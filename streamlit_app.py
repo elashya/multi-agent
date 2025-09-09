@@ -76,6 +76,7 @@ Behavior:
 - Deliver the idea step-by-step using this structure:
 {chr(10).join([f"  {i+1}. {s}" for i, s in enumerate(SECTIONS)])}
 - Focus your content primarily on effectiveness and profitability of each section.
+- Limit your response to 4–5 concise sentences per section.
 - Start with section 1 only and wait for Customer response.
 - Proceed to next section only when explicitly approved.
 - Revise the current section if challenged.
@@ -94,6 +95,7 @@ Personality:
 Behavior:
 - Respond to one section at a time.
 - Focus your evaluation on the effectiveness and profitability of the idea.
+- Keep your reply concise (2–3 sentences).
 - Either:
   - Approve: say \"Approved, go on.\"
   - Challenge: ask for clarification, proof, or revision.
@@ -170,12 +172,6 @@ if "section_index" not in st.session_state:
 transcript = st.session_state.transcript
 section_index = st.session_state.section_index
 
-col1, col2 = st.columns(2)
-with col1:
-    st.subheader("💼 Consultant")
-with col2:
-    st.subheader("🧑 Customer")
-
 if start_btn:
     if OpenAI is None or "OPENAI_API_KEY" not in st.secrets:
         st.error("Missing dependencies or API key.")
@@ -214,15 +210,9 @@ if start_btn:
         rejected = is_match(customer_reply, REJECT_PATTERNS)
 
         with placeholder.container():
-            c1, c2 = st.columns(2)
-            with c1:
-                for t in transcript:
-                    if t['role'] == 'consultant':
-                        st.markdown(f"**Consultant:**\n\n{t['content']}\n\n---")
-            with c2:
-                for t in transcript:
-                    if t['role'] == 'customer':
-                        st.markdown(f"**Customer:**\n\n{t['content']}\n\n---")
+            for t in transcript:
+                speaker = "Consultant" if t['role'] == 'consultant' else "Customer"
+                st.markdown(f"**{speaker}:**\n\n{t['content']}\n\n---")
 
     if accepted:
         st.success("🌟 Customer accepted the idea!")
@@ -232,15 +222,9 @@ if start_btn:
         st.warning("⏳ Max turns reached or all sections presented.")
 
 # Show transcript
-c1, c2 = st.columns(2)
-with c1:
-    for t in transcript:
-        if t["role"] == "consultant":
-            st.markdown(f"**Consultant:**\n\n{t['content']}\n\n---")
-with c2:
-    for t in transcript:
-        if t["role"] == "customer":
-            st.markdown(f"**Customer:**\n\n{t['content']}\n\n---")
+for t in transcript:
+    speaker = "Consultant" if t["role"] == "consultant" else "Customer"
+    st.markdown(f"**{speaker}:**\n\n{t['content']}\n\n---")
 
 if transcript:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")

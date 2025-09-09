@@ -44,7 +44,7 @@ def require_pin():
 def logout():
     st.session_state.auth_ok = False
     st.session_state.auth_tries = 0
-    st.experimental_rerun()
+    st.rerun()
 
 require_pin()
 
@@ -160,7 +160,7 @@ with st.sidebar:
 if clear_btn:
     for key in ["transcript", "section_index"]:
         st.session_state.pop(key, None)
-    st.experimental_rerun()
+    st.rerun()
 
 if "transcript" not in st.session_state:
     st.session_state.transcript = []

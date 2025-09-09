@@ -75,6 +75,7 @@ Behavior:
 - Present only one idea at a time.
 - Deliver the idea step-by-step using this structure:
 {chr(10).join([f"  {i+1}. {s}" for i, s in enumerate(SECTIONS)])}
+- Focus your content primarily on effectiveness and profitability of each section.
 - Start with section 1 only and wait for Customer response.
 - Proceed to next section only when explicitly approved.
 - Revise the current section if challenged.
@@ -92,13 +93,14 @@ Personality:
 
 Behavior:
 - Respond to one section at a time.
+- Focus your evaluation on the effectiveness and profitability of the idea.
 - Either:
-  - Approve: say "Approved, go on."
+  - Approve: say \"Approved, go on.\"
   - Challenge: ask for clarification, proof, or revision.
 - Do not allow skipping ahead.
 - Accept the full idea only if all sections are convincing:
-  - Say: "I accept this idea" or "I am convinced."
-- If rejecting: clearly say "I reject this idea because..."
+  - Say: \"I accept this idea\" or \"I am convinced.\"
+- If rejecting: clearly say \"I reject this idea because...\"
 """
 
 ACCEPT_PATTERNS = [
@@ -204,7 +206,7 @@ if start_btn:
         consultant_reply = call_chat(client, model_consultant, CONSULTANT_SYSTEM, consultant_prompt, temp_consultant, top_p_consultant)
         transcript.append({"role": "consultant", "content": consultant_reply})
 
-        customer_prompt = f"The Consultant gave section: {section_title}\n\n{consultant_reply}\n\nRespond ONLY to this section. Approve by saying 'Approved, go on.' or challenge it."
+        customer_prompt = f"The Consultant gave section: {section_title}\n\n{consultant_reply}\n\nRespond ONLY to this section. Focus your response on its effectiveness and profitability. Approve by saying 'Approved, go on.' or challenge it."
         customer_reply = call_chat(client, model_customer, CUSTOMER_SYSTEM, customer_prompt, temp_customer, top_p_customer)
         transcript.append({"role": "customer", "content": customer_reply})
 

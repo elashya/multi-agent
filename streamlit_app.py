@@ -49,76 +49,51 @@ def logout():
 require_pin()
 
 # -----------------------------
-# System Instructions (Updated)
+# System Instructions (Single-Focus Version)
 # -----------------------------
-SECTIONS = [
-    "Problem Statement",
-    "AI Solution",
-    "AI Utilization %",
-    "Deployment & Cost Feasibility",
-    "Business Value",
-    "Revenue Model",
-    "Uniqueness Factor",
-    "Scalability & Sustainability",
-]
+CONSULTANT_SYSTEM = """You are an AI Business Consultant and Subject Matter Expert (SME).
 
-CONSULTANT_SYSTEM = f"""You are an AI Business Consultant and Subject Matter Expert (SME).
-
-Goals:
-- Propose one unique, AI-powered online business idea.
-- Ensure:
-  - 85%+ AI-driven implementation.
-  - 100% AI-autonomous operations.
-  - Minimal human effort or infrastructure.
+Your goal is to propose ONE unique online business idea that is:
+- Powered primarily by AI (85%+ AI-driven implementation)
+- Fully automated (100% AI-run operations)
+- Profitable with minimal deployment cost (using existing APIs, SaaS tools, or open-source frameworks)
 
 Behavior:
-- Present only one idea at a time.
-- Deliver the idea step-by-step using this structure:
-{chr(10).join([f"  {i+1}. {s}" for i, s in enumerate(SECTIONS)])}
-- Focus your content primarily on effectiveness and profitability of each section.
-- Limit your response to 4–5 concise sentences per section.
-- Start with section 1 only and wait for Customer response.
-- Proceed to next section only when explicitly approved.
-- Revise the current section if challenged.
-- Do not skip sections.
-- Continue until Customer accepts or rejects the entire idea.
-- Be practical, clear, concise, ROI-focused.
+- Do not list multiple ideas.
+- Present only one concise idea.
+- Your idea must emphasize effectiveness and profitability.
+- Clearly highlight why it has minimal deployment cost.
+- Keep your response under 5 concise sentences.
+- Be practical, ROI-focused, and persuasive.
+- Wait for the Customer to respond with either acceptance or challenges.
+- Do not propose another idea unless the first is rejected.
 """
 
-CUSTOMER_SYSTEM = f"""You are a skeptical Customer seeking a low-cost, AI-first online business.
-
-Personality:
-- Skeptical, analytical, cost-sensitive.
-- Technically aware, but not a deep expert.
-- Value-driven: Ideas must benefit real users, not just chase money.
+CUSTOMER_SYSTEM = """You are a skeptical Customer seeking a profitable, low-cost, AI-powered online business idea.
 
 Behavior:
-- Respond to one section at a time.
-- Focus your evaluation on the effectiveness and profitability of the idea.
-- Keep your reply concise (2–3 sentences).
-- Either:
-  - Approve: say \"Approved, go on.\"
-  - Challenge: ask for clarification, proof, or revision.
-- Do not allow skipping ahead.
-- Accept the full idea only if all sections are convincing:
-  - Say: \"I accept this idea\" or \"I am convinced.\"
-- If rejecting: clearly say \"I reject this idea because...\"
+- Listen to only ONE idea at a time.
+- Challenge the Consultant ONLY on its profitability and low deployment cost.
+- Ask for clarification if any part of the idea seems vague, costly, or unconvincing.
+- Be concise (2–3 sentence responses).
+- Accept the idea only if it is clearly profitable AND has minimal setup cost.
+- If convinced, say: "I accept this idea."
+- If not convinced, say: "I reject this idea because..."
+- Do not ask for another idea unless the first is rejected.
 """
 
 ACCEPT_PATTERNS = [
-    r"\bI am convinced\b",
     r"\bI accept this idea\b",
+    r"\bI am convinced\b",
     r"\bThis is (feasible|profitable)\b",
-    r"\bI agree to proceed\b",
+    r"\bI agree to proceed\b"
 ]
 REJECT_PATTERNS = [
     r"\bI reject this idea\b",
     r"\bThis won't work\b",
     r"\bNot acceptable\b",
-    r"\bI am not convinced\b",
+    r"\bI am not convinced\b"
 ]
-
-SECTION_APPROVED_PATTERN = r"\bApproved, go on\b"
 
 def is_match(text, patterns):
     for pat in patterns:
@@ -142,7 +117,7 @@ def call_chat(client, model, system, user, temperature, top_p):
 # UI
 # -----------------------------
 st.title("🤝 Two-Assistant Mediator: Consultant ↔ Customer")
-st.caption("One AI-powered business idea, discussed step-by-step.")
+st.caption("One AI-first business idea only — must be profitable and low-cost to launch.")
 
 with st.sidebar:
     st.header("⚙️ Settings")
@@ -152,7 +127,7 @@ with st.sidebar:
     temp_customer = st.slider("Customer Temperature", 0.0, 1.0, 0.45, 0.05)
     top_p_consultant = st.slider("Consultant Top-p", 0.1, 1.0, 1.0, 0.05)
     top_p_customer = st.slider("Customer Top-p", 0.1, 1.0, 1.0, 0.05)
-    max_turns = st.number_input("Max dialogue turns", min_value=1, max_value=50, value=30)
+    max_turns = st.number_input("Max dialogue turns", min_value=1, max_value=20, value=6)
     st.markdown("---")
     if st.button("🔓 Log out"):
         logout()
@@ -160,17 +135,13 @@ with st.sidebar:
     clear_btn = st.button("🔄 Clear Transcript")
 
 if clear_btn:
-    for key in ["transcript", "section_index"]:
-        st.session_state.pop(key, None)
+    st.session_state.pop("transcript", None)
     st.rerun()
 
 if "transcript" not in st.session_state:
     st.session_state.transcript = []
-if "section_index" not in st.session_state:
-    st.session_state.section_index = 0
 
 transcript = st.session_state.transcript
-section_index = st.session_state.section_index
 
 if start_btn:
     if OpenAI is None or "OPENAI_API_KEY" not in st.secrets:
@@ -182,32 +153,25 @@ if start_btn:
     turn = 0
     placeholder = st.empty()
 
-    while turn < max_turns and not (accepted or rejected) and section_index < len(SECTIONS):
-        section_title = SECTIONS[section_index]
+    # First idea from Consultant
+    consultant_prompt = "Propose a unique AI-first online business idea that is profitable and has minimal deployment cost."
+    consultant_reply = call_chat(client, model_consultant, CONSULTANT_SYSTEM, consultant_prompt, temp_consultant, top_p_consultant)
+    transcript.append({"role": "consultant", "content": consultant_reply})
+
+    while turn < max_turns and not (accepted or rejected):
         turn += 1
 
-        if turn == 1:
-            consultant_prompt = f"Propose one unique AI-first business idea. Present ONLY section: {section_title}."
-        else:
-            last_cust = transcript[-1]['content']
-            if re.search(SECTION_APPROVED_PATTERN, last_cust, re.IGNORECASE):
-                section_index += 1
-                if section_index >= len(SECTIONS):
-                    break
-                section_title = SECTIONS[section_index]
-                consultant_prompt = f"Continue the SAME idea. Present ONLY section: {section_title}."
-            else:
-                consultant_prompt = f"Revise or clarify ONLY section: {section_title} based on the Customer’s latest response below.\n\n{last_cust}"
-
-        consultant_reply = call_chat(client, model_consultant, CONSULTANT_SYSTEM, consultant_prompt, temp_consultant, top_p_consultant)
-        transcript.append({"role": "consultant", "content": consultant_reply})
-
-        customer_prompt = f"The Consultant gave section: {section_title}\n\n{consultant_reply}\n\nRespond ONLY to this section. Focus your response on its effectiveness and profitability. Approve by saying 'Approved, go on.' or challenge it."
+        customer_prompt = f"The Consultant proposed this idea:\n\n{consultant_reply}\n\nEvaluate ONLY its profitability and deployment cost. Respond in 2–3 sentences."
         customer_reply = call_chat(client, model_customer, CUSTOMER_SYSTEM, customer_prompt, temp_customer, top_p_customer)
         transcript.append({"role": "customer", "content": customer_reply})
 
         accepted = is_match(customer_reply, ACCEPT_PATTERNS)
         rejected = is_match(customer_reply, REJECT_PATTERNS)
+
+        if not accepted and not rejected:
+            consultant_prompt = f"The Customer replied:\n\n{customer_reply}\n\nRefine the SAME idea to better prove its profitability and minimal deployment cost. Keep your reply short."
+            consultant_reply = call_chat(client, model_consultant, CONSULTANT_SYSTEM, consultant_prompt, temp_consultant, top_p_consultant)
+            transcript.append({"role": "consultant", "content": consultant_reply})
 
         with placeholder.container():
             for t in transcript:
@@ -215,13 +179,12 @@ if start_btn:
                 st.markdown(f"**{speaker}:**\n\n{t['content']}\n\n---")
 
     if accepted:
-        st.success("🌟 Customer accepted the idea!")
+        st.success("Customer accepted the idea!")
     elif rejected:
-        st.error("❌ Customer rejected the idea.")
+        st.error("Customer rejected the idea.")
     else:
-        st.warning("⏳ Max turns reached or all sections presented.")
+        st.warning("Max turns reached.")
 
-# Show transcript
 for t in transcript:
     speaker = "Consultant" if t["role"] == "consultant" else "Customer"
     st.markdown(f"**{speaker}:**\n\n{t['content']}\n\n---")

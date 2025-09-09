@@ -4,12 +4,53 @@ from datetime import datetime
 import streamlit as st
 try:
     from openai import OpenAI
-except Exception as e:
+except Exception:
     st.warning("OpenAI SDK not found. Make sure requirements.txt installs 'openai>=1.40.0'.")
     OpenAI = None
 
 st.set_page_config(page_title="Consultant ↔ Customer Mediator", layout="wide")
 
+# -----------------------------
+# Auth (PIN Gate)
+# -----------------------------
+def require_pin():
+    if "auth_ok" not in st.session_state:
+        st.session_state.auth_ok = False
+    if "auth_tries" not in st.session_state:
+        st.session_state.auth_tries = 0
+
+    configured_pin = st.secrets.get("APP_PIN")
+    if not configured_pin:
+        st.stop()  # hard stop if missing secret
+    if st.session_state.auth_ok:
+        return True
+
+    st.markdown("### 🔒 Enter PIN to access the app")
+    with st.form("pin_form", clear_on_submit=False):
+        pin = st.text_input("PIN", type="password", help="Contact the owner if you don't have the PIN.")
+        submitted = st.form_submit_button("Unlock")
+    if submitted:
+        if pin == configured_pin:
+            st.session_state.auth_ok = True
+            st.session_state.auth_tries = 0
+            st.success("Unlocked.")
+            return True
+        else:
+            st.session_state.auth_tries += 1
+            st.error("Incorrect PIN.")
+    st.stop()
+
+def logout():
+    st.session_state.auth_ok = False
+    st.session_state.auth_tries = 0
+    st.experimental_rerun()
+
+# Enforce PIN before rendering the app
+require_pin()
+
+# -----------------------------
+# App UI (only renders if authed)
+# -----------------------------
 st.title("🤝 Two-Assistant Mediator: Consultant ↔ Customer")
 st.caption("Runs a structured dialogue between a Consultant (one idea at a time) and a skeptical late-40s Customer until acceptance or rejection.")
 
@@ -80,7 +121,7 @@ def is_match(text: str, patterns):
     for pat in patterns:
         if re.search(pat, text, flags=re.IGNORECASE):
             return True
-    return False
+        return False
 
 # Sidebar controls
 with st.sidebar:
@@ -95,15 +136,17 @@ with st.sidebar:
 
     st.markdown("---")
     st.subheader("🔐 Secrets")
-    if "OPENAI_API_KEY" not in st.secrets:
-        st.error("Missing OPENAI_API_KEY in Streamlit secrets.")
-    else:
-        st.success("OPENAI_API_KEY is set.")
+    ok_api = "OPENAI_API_KEY" in st.secrets
+    ok_pin = "APP_PIN" in st.secrets
+    st.write("OPENAI_API_KEY:", "✅ set" if ok_api else "❌ missing")
+    st.write("APP_PIN:", "✅ set" if ok_pin else "❌ missing")
 
     st.markdown("Add in Streamlit Cloud → App → **Settings → Secrets**:\n\n"
-                "```\nOPENAI_API_KEY = \"sk-...\"\n```")
+                "```\nOPENAI_API_KEY = \"sk-...\"\nAPP_PIN = \"9462\"\n```")
 
     st.markdown("---")
+    if st.button("🔓 Log out"):
+        logout()
     start_btn = st.button("▶️ Start Dialogue", type="primary")
     clear_btn = st.button("🔄 Clear Transcript")
 
@@ -137,6 +180,9 @@ transcript = st.session_state["transcript"]
 # Run dialogue
 if start_btn:
     if OpenAI is None:
+        st.stop()
+    if "OPENAI_API_KEY" not in st.secrets:
+        st.error("Missing OPENAI_API_KEY in secrets.")
         st.stop()
 
     client = OpenAI(api_key=st.secrets.get("OPENAI_API_KEY"))
